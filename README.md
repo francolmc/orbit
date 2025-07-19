@@ -205,7 +205,7 @@ orbit detox
 - [X] **Estructura del proyecto**: Crear carpetas y arquitectura básica
 - [X] **Script principal**: `bin/orbit` con sistema de comandos
 - [X] **Sistema de logging**: `lib/logger.sh` para trazabilidad
-- [ ] **Utilidades base**: `lib/utils.sh` con funciones comunes
+- [X] **Utilidades base**: `lib/utils.sh` con funciones comunes
 - [ ] **Configuración básica**: `config/orbit.conf` y manejo de configuración
 
 ### 📦 Fase 2: Gestión básica de paquetes
