@@ -202,11 +202,11 @@ orbit detox
 ## 🗺️ Roadmap de desarrollo
 
 ### 📋 Fase 1: Fundamentos (Core)
-- [ ] **Estructura del proyecto**: Crear carpetas y arquitectura básica
-- [ ] **Script principal**: `bin/orbit` con sistema de comandos
-- [ ] **Sistema de logging**: `lib/logger.sh` para trazabilidad
-- [ ] **Utilidades base**: `lib/utils.sh` con funciones comunes
-- [ ] **Configuración básica**: `config/orbit.conf` y manejo de configuración
+- [X] **Estructura del proyecto**: Crear carpetas y arquitectura básica
+- [X] **Script principal**: `bin/orbit` con sistema de comandos
+- [X] **Sistema de logging**: `lib/logger.sh` para trazabilidad
+- [X] **Utilidades base**: `lib/utils.sh` con funciones comunes
+- [X] **Configuración básica**: `config/orbit.conf` y manejo de configuración
 
 ### 📦 Fase 2: Gestión básica de paquetes
 - [ ] **Instalación simple**: `modules/install.sh` para APT/Snap/Flatpak básico

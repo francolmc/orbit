@@ -1,0 +1,406 @@
+#!/bin/bash
+
+# ==========================================
+# 🪐 ORBIT - Gestor de Sistema Multiplataforma
+# ==========================================
+# Script principal - Sistema de comandos
+# Versión: 2.0.0
+# Licencia: MIT
+# ==========================================
+
+set -euo pipefail  # Modo estricto: salir en error, variables no definidas, error en pipes
+
+# ==========================================
+# CONFIGURACIÓN Y VARIABLES GLOBALES
+# ==========================================
+
+# Colores ANSI para output
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly CYAN='\033[0;36m'
+readonly MAGENTA='\033[0;35m'
+readonly BOLD='\033[1m'
+readonly DIM='\033[2m'
+readonly RESET='\033[0m'
+
+# Directorios del proyecto
+readonly ORBIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly LIB_DIR="$ORBIT_DIR/lib"
+readonly MODULES_DIR="$ORBIT_DIR/modules"
+readonly CONFIG_DIR="$ORBIT_DIR/config"
+readonly LOGS_DIR="$ORBIT_DIR/logs"
+
+# Archivos principales
+readonly MAIN_LOG="$LOGS_DIR/orbit-installed.log"
+readonly SYSTEM_LOG="$LOGS_DIR/system-updates.log"
+readonly REPO_LOG="$LOGS_DIR/repositories.log"
+readonly CONFIG_FILE="$CONFIG_DIR/orbit.conf"
+
+# Información de la versión
+readonly ORBIT_VERSION="2.0.0"
+readonly ORBIT_BUILD="$(date +%Y%m%d)"
+
+# ==========================================
+# FUNCIONES DE UTILIDAD
+# ==========================================
+
+# Función para mostrar mensajes con colores
+print_message() {
+    local type="$1"
+    shift
+    local message="$*"
+
+    case "$type" in
+        "error")   echo -e "${RED}❌ Error: ${message}${RESET}" >&2 ;;
+        "success") echo -e "${GREEN}✅ ${message}${RESET}" ;;
+        "warning") echo -e "${YELLOW}⚠️  ${message}${RESET}" ;;
+        "info")    echo -e "${CYAN}ℹ️  ${message}${RESET}" ;;
+        "debug")   echo -e "${DIM}🐛 Debug: ${message}${RESET}" ;;
+        "header")  echo -e "${MAGENTA}${BOLD}🪐 ${message}${RESET}" ;;
+        *)         echo -e "${message}" ;;
+    esac
+}
+
+# Función para mostrar el banner principal
+show_banner() {
+    echo -e "${CYAN}${BOLD}"
+    echo "    ██████╗ ██████╗ ██████╗ ██╗████████╗"
+    echo "   ██╔═══██╗██╔══██╗██╔══██╗██║╚══██╔══╝"
+    echo "   ██║   ██║██████╔╝██████╔╝██║   ██║   "
+    echo "   ██║   ██║██╔══██╗██╔══██╗██║   ██║   "
+    echo "   ╚██████╔╝██║  ██║██████╔╝██║   ██║   "
+    echo "    ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚═╝   ╚═╝   "
+    echo -e "${RESET}"
+    echo -e "${CYAN}   Gestor de Sistema Multiplataforma v${ORBIT_VERSION}${RESET}"
+    echo -e "${DIM}   Unificando APT • Snap • Flatpak • Repositorios${RESET}"
+    echo
+}
+
+# Función para verificar dependencias del sistema
+check_dependencies() {
+    local missing_deps=()
+    local deps=("apt" "flatpak" "snap" "wget" "curl")
+
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" &>/dev/null; then
+            missing_deps+=("$dep")
+        fi
+    done
+
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        print_message "error" "Dependencias faltantes: ${missing_deps[*]}"
+        print_message "info" "Instala las dependencias faltantes antes de continuar"
+        exit 1
+    fi
+}
+
+# Función para crear directorios necesarios
+setup_directories() {
+    local dirs=("$LOGS_DIR" "$CONFIG_DIR")
+
+    for dir in "${dirs[@]}"; do
+        if [[ ! -d "$dir" ]]; then
+            mkdir -p "$dir"
+            print_message "info" "Creado directorio: $dir"
+        fi
+    done
+}
+
+# Función para cargar configuración
+load_config() {
+    # Crear configuración por defecto si no existe
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        cat > "$CONFIG_FILE" << 'EOF'
+# Configuración de Orbit
+DEBUG_MODE=false
+AUTO_UPDATE_REPOS=true
+CONFIRM_BEFORE_INSTALL=true
+DEFAULT_INSTALL_SOURCE=auto
+CLEANUP_AFTER_REMOVE=true
+EOF
+        print_message "info" "Creado archivo de configuración por defecto"
+    fi
+
+    # Cargar configuración
+    # shellcheck source=/dev/null
+    source "$CONFIG_FILE"
+}
+
+# Función para cargar librerías
+load_libraries() {
+    local lib_files=("logger.sh" "utils.sh")
+
+    for lib in "${lib_files[@]}"; do
+        local lib_path="$LIB_DIR/$lib"
+        if [[ -f "$lib_path" ]]; then
+            # shellcheck source=/dev/null
+            source "$lib_path"
+        fi
+    done
+}
+
+# ==========================================
+# SISTEMA DE AYUDA
+# ==========================================
+
+show_help() {
+    show_banner
+
+    echo -e "${BOLD}USO:${RESET}"
+    echo "    orbit [comando] [opciones] [argumentos]"
+    echo
+
+    echo -e "${BOLD}COMANDOS PRINCIPALES:${RESET}"
+    echo -e "  ${GREEN}install${RESET} <app>        Instala una aplicación usando la mejor fuente"
+    echo -e "  ${GREEN}remove${RESET}  <app>        Desinstala una aplicación completamente"
+    echo -e "  ${GREEN}search${RESET}  <término>    Busca aplicaciones en todas las fuentes"
+    echo -e "  ${GREEN}update${RESET}  <app>        Actualiza una aplicación específica"
+    echo -e "  ${GREEN}list${RESET}                 Muestra aplicaciones instaladas por Orbit"
+    echo
+
+    echo -e "${BOLD}COMANDOS DE SISTEMA:${RESET}"
+    echo -e "  ${CYAN}system update${RESET}        Actualiza todo el sistema (repos + apps)"
+    echo -e "  ${CYAN}system upgrade${RESET}       Upgrade completo del sistema"
+    echo -e "  ${CYAN}system cleanup${RESET}       Limpia caché y paquetes huérfanos"
+    echo -e "  ${CYAN}system health${RESET}        Diagnóstico de salud del sistema"
+    echo
+
+    echo -e "${BOLD}GESTIÓN DE REPOSITORIOS:${RESET}"
+    echo -e "  ${YELLOW}repo list${RESET}            Lista repositorios agregados por Orbit"
+    echo -e "  ${YELLOW}repo add${RESET} <app>       Agrega repositorio para una aplicación"
+    echo -e "  ${YELLOW}repo remove${RESET} <app>    Remueve repositorio de una aplicación"
+    echo -e "  ${YELLOW}repo update${RESET}          Actualiza índices de todos los repositorios"
+    echo
+
+    echo -e "${BOLD}HERRAMIENTAS AVANZADAS:${RESET}"
+    echo -e "  ${MAGENTA}detox${RESET}                Limpieza profunda del sistema"
+    echo -e "  ${MAGENTA}history${RESET}              Muestra historial de instalaciones"
+    echo -e "  ${MAGENTA}backup${RESET}               Hace backup de la configuración de Orbit"
+    echo -e "  ${MAGENTA}restore${RESET}              Restaura desde un backup"
+    echo
+
+    echo -e "${BOLD}INFORMACIÓN:${RESET}"
+    echo -e "  ${BLUE}version${RESET}              Muestra versión de Orbit"
+    echo -e "  ${BLUE}help${RESET}                 Muestra esta ayuda"
+    echo -e "  ${BLUE}status${RESET}               Muestra estado actual del sistema"
+    echo
+
+    echo -e "${BOLD}OPCIONES GLOBALES:${RESET}"
+    echo -e "  ${DIM}--debug${RESET}              Habilita modo debug"
+    echo -e "  ${DIM}--quiet${RESET}              Modo silencioso (solo errores)"
+    echo -e "  ${DIM}--force${RESET}              Fuerza operaciones sin confirmación"
+    echo -e "  ${DIM}--dry-run${RESET}            Simula operaciones sin ejecutar"
+    echo
+
+    echo -e "${BOLD}EJEMPLOS:${RESET}"
+    echo -e "  ${DIM}orbit install code${RESET}           # Instala VS Code automáticamente"
+    echo -e "  ${DIM}orbit search browser${RESET}         # Busca navegadores disponibles"
+    echo -e "  ${DIM}orbit system update${RESET}          # Actualiza todo el sistema"
+    echo -e "  ${DIM}orbit repo add windsurf${RESET}      # Agrega repo para Windsurf"
+    echo -e "  ${DIM}orbit detox${RESET}                  # Limpieza profunda"
+    echo
+
+    echo -e "${CYAN}Para más información, visita: ${BOLD}https://github.com/tuusuario/orbit${RESET}"
+}
+
+show_version() {
+    echo -e "${CYAN}${BOLD}Orbit Package Manager${RESET}"
+    echo -e "Versión: ${GREEN}$ORBIT_VERSION${RESET}"
+    echo -e "Build: ${DIM}$ORBIT_BUILD${RESET}"
+    echo -e "Directorio: ${DIM}$ORBIT_DIR${RESET}"
+    echo
+    echo -e "${DIM}Copyright (c) 2025 - Licencia MIT${RESET}"
+}
+
+show_status() {
+    print_message "header" "Estado del Sistema Orbit"
+    echo
+
+    # Verificar dependencias
+    print_message "info" "Verificando dependencias..."
+    check_dependencies
+    print_message "success" "Todas las dependencias están instaladas"
+
+    # Mostrar estadísticas
+    local total_apps=0
+    if [[ -f "$MAIN_LOG" ]]; then
+        total_apps=$(wc -l < "$MAIN_LOG")
+    fi
+
+    echo -e "${CYAN}📊 Estadísticas:${RESET}"
+    echo -e "  • Aplicaciones instaladas: ${BOLD}$total_apps${RESET}"
+    echo -e "  • Directorio de Orbit: ${DIM}$ORBIT_DIR${RESET}"
+    echo -e "  • Configuración: ${DIM}$CONFIG_FILE${RESET}"
+    echo
+
+    # Estado de fuentes
+    echo -e "${CYAN}🔗 Estado de fuentes:${RESET}"
+    echo -e "  • APT: $(command -v apt >/dev/null && echo "${GREEN}✓${RESET}" || echo "${RED}✗${RESET}")"
+    echo -e "  • Snap: $(command -v snap >/dev/null && echo "${GREEN}✓${RESET}" || echo "${RED}✗${RESET}")"
+    echo -e "  • Flatpak: $(command -v flatpak >/dev/null && echo "${GREEN}✓${RESET}" || echo "${RED}✗${RESET}")"
+}
+
+# ==========================================
+# DISPATCHER DE COMANDOS
+# ==========================================
+
+execute_module() {
+    local module="$1"
+    shift
+    local module_path="$MODULES_DIR/$module.sh"
+
+    if [[ ! -f "$module_path" ]]; then
+        print_message "error" "Módulo '$module' no encontrado en $module_path"
+        print_message "info" "Módulos disponibles: $(ls -1 "$MODULES_DIR"/ 2>/dev/null | sed 's/\.sh$//' | tr '\n' ' ')"
+        return 1
+    fi
+
+    if [[ ! -x "$module_path" ]]; then
+        print_message "warning" "Haciendo ejecutable el módulo $module"
+        chmod +x "$module_path"
+    fi
+
+    # Ejecutar el módulo con los argumentos
+    "$module_path" "$@"
+}
+
+# ==========================================
+# FUNCIÓN PRINCIPAL
+# ==========================================
+
+main() {
+    # Variables globales para opciones
+    local debug_mode=false
+    local quiet_mode=false
+    local force_mode=false
+    local dry_run=false
+
+    # Procesar opciones globales
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --debug)
+                debug_mode=true
+                shift
+                ;;
+            --quiet)
+                quiet_mode=true
+                shift
+                ;;
+            --force)
+                force_mode=true
+                shift
+                ;;
+            --dry-run)
+                dry_run=true
+                shift
+                ;;
+            --help|-h)
+                show_help
+                exit 0
+                ;;
+            --version|-v)
+                show_version
+                exit 0
+                ;;
+            -*)
+                print_message "error" "Opción desconocida: $1"
+                print_message "info" "Usa 'orbit --help' para ver las opciones disponibles"
+                exit 1
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
+    # Exportar opciones para módulos
+    export ORBIT_DEBUG="$debug_mode"
+    export ORBIT_QUIET="$quiet_mode"
+    export ORBIT_FORCE="$force_mode"
+    export ORBIT_DRY_RUN="$dry_run"
+
+    # Si no hay argumentos, mostrar ayuda
+    if [[ $# -eq 0 ]]; then
+        show_help
+        exit 0
+    fi
+
+    # Configuración inicial
+    setup_directories
+    load_config
+    load_libraries
+
+    # Obtener comando principal
+    local command="$1"
+    shift
+
+    # Dispatcher de comandos
+    case "$command" in
+        # Comandos principales
+        install|remove|search|update|list)
+            execute_module "$command" "$@"
+            ;;
+
+        # Comandos de sistema
+        system)
+            if [[ $# -eq 0 ]]; then
+                print_message "error" "Comando 'system' requiere subcomando"
+                print_message "info" "Subcomandos disponibles: update, upgrade, cleanup, health"
+                exit 1
+            fi
+            local subcmd="$1"
+            shift
+            execute_module "system-$subcmd" "$@"
+            ;;
+
+        # Gestión de repositorios
+        repo)
+            if [[ $# -eq 0 ]]; then
+                print_message "error" "Comando 'repo' requiere subcomando"
+                print_message "info" "Subcomandos disponibles: list, add, remove, update"
+                exit 1
+            fi
+            local subcmd="$1"
+            shift
+            execute_module "repo-$subcmd" "$@"
+            ;;
+
+        # Herramientas avanzadas
+        detox|history|backup|restore)
+            execute_module "$command" "$@"
+            ;;
+
+        # Comandos de información
+        help|--help|-h)
+            show_help
+            ;;
+        version|--version|-v)
+            show_version
+            ;;
+        status)
+            show_status
+            ;;
+
+        # Comando desconocido
+        *)
+            print_message "error" "Comando desconocido: '$command'"
+            print_message "info" "Usa 'orbit help' para ver comandos disponibles"
+            exit 1
+            ;;
+    esac
+}
+
+# ==========================================
+# PUNTO DE ENTRADA
+# ==========================================
+
+# Verificar que no se esté ejecutando con sudo para comandos que no lo necesitan
+if [[ $EUID -eq 0 ]] && [[ "${1:-}" != "system" ]]; then
+    print_message "warning" "Orbit no necesita sudo para la mayoría de operaciones"
+    print_message "info" "Solo algunos comandos específicos solicitarán permisos administrativos"
+fi
+
+# Ejecutar función principal con todos los argumentos
+main "$@"
